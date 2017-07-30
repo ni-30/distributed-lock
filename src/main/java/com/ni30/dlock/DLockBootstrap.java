@@ -22,7 +22,7 @@ import java.util.Properties;
 /**
  * @author nitish.aryan (iitd.nitish@gmail.com)
  */
-public class DLockBootstrap {
+class DLockBootstrap {
 	private final String host;
 	private final int minPortNumber;
 	private final int maxPortNumber;
