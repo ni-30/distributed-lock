@@ -179,7 +179,7 @@ public class LockService {
 		}
 
 		@Override
-		public void release() throws DLockException {
+		public void release() {
 			if(this.reentrantLock.isLocked() && this.reentrantLock.isHeldByCurrentThread()) {
 				this.reentrantLock.unlock();
 			}

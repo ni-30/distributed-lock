@@ -5,5 +5,5 @@ package com.ni30.dlock;
  */
 public interface DLock {
 	String getKey();
-	void release() throws DLockException;
+	void release();
 }
