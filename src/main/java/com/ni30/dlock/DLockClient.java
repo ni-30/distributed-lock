@@ -17,7 +17,7 @@ public class DLockClient {
 		this.bootstrap = new DLockBootstrap(properties);
 	}
 	
-	public DLock localLock(String key, long timeout, TimeUnit unit) throws DLockException {
+	public DLock acquireLock(String key, long timeout, TimeUnit unit) throws DLockException {
 		LockService lockservice = this.bootstrap.getLockService();
 		return lockservice.localLock(key, timeout, unit);
 	}
