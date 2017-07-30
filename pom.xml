@@ -116,7 +116,7 @@
                     <transformers>
                         <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
                         <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
-                            <mainClass>com.ni30.dlock.App</mainClass>
+                            <mainClass>com.ni30.dlock.Test</mainClass>
                         </transformer>
                     </transformers>
                 </configuration>

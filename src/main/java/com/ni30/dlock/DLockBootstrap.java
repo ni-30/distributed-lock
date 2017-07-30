@@ -70,6 +70,10 @@ public class DLockBootstrap {
         System.out.println("DLock listening on port: " + this.serverSocketPort);
 	}
 	
+	public LockService getLockService() {
+		return this.lockService;
+	}
+	
 	public void start() throws Exception {
 		this.taskLooperService.start();
 		this.taskLooperService.add(new SocketChannelAcceptTask());
@@ -81,7 +85,7 @@ public class DLockBootstrap {
 		this.taskLooperService.add(task);
 	}
 	
-	public void close() throws Exception {
+	public void stop() throws Exception {
 		if(this.serverSocketChannel.isOpen()) {
 			try {
 				this.serverSocketChannel.close();
