@@ -2,10 +2,12 @@ package com.ni30.dlock;
 
 import com.ni30.dlock.node.ClusterNodePipeline;
 import com.ni30.dlock.task.CommandSenderTask;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -37,13 +39,16 @@ public class LockService {
 	public boolean grantRemoteLock(String key, String nodeName) {
 		DLockImpl lock = this.locks.get(key);
 		if(lock != null && lock.isLocked()) {
-			CountDownLatch cdl = lock.getCurrentCountDownLatch();
-			if(cdl != null && cdl.getCount() == 0) {
+			final LockTracker currentLockTracker = lock.getCurrentLockTracker();
+			
+			if((currentLockTracker.countDownLatch != null 
+					&& currentLockTracker.countDownLatch.getCount() == 0) 
+					|| currentLockTracker.repliedNodes.contains(nodeName)) {
 				return false; // lock is locally acquired
 			}
-		
+			
 			// two nodes trying to acquire same lock
-			int p1 = this.priority(key, localNodeName);
+			int p1 = this.priority(key, this.localNodeName);
 			int p2 = this.priority(key, nodeName);
 			
 			return p1 > p2;
@@ -54,13 +59,13 @@ public class LockService {
 	
 	public void onLockGrant(String key, String lockId, String nodeName) {
 		DLockImpl lock = this.locks.get(key);
-		if(lock != null 
-				&& lock.isLocked() 
-				&& lockId.equals(lock.getCurrentLockId())) {
-			
-			CountDownLatch cdl = lock.getCurrentCountDownLatch();
-			if(cdl != null) {
-				cdl.countDown();
+		if(lock != null && lock.isLocked()) {
+			final LockTracker currentLockTracker = lock.getCurrentLockTracker();
+			if(currentLockTracker != null && currentLockTracker.lockId.equals(lockId)) {
+				currentLockTracker.repliedNodes.add(nodeName);
+				if(currentLockTracker.countDownLatch != null) {
+					currentLockTracker.countDownLatch.countDown();
+				}
 			}
 		}
 	}
@@ -84,8 +89,7 @@ public class LockService {
 	private class DLockImpl implements DLock {
 		private final String key;
 		private final ReentrantLock reentrantLock;
-		private String currentLockId;
-		private CountDownLatch currentCountDownLatch;
+		private LockTracker currentLockTracker;
 		
 		public DLockImpl(String key) {
 			this.key = key;
@@ -97,16 +101,12 @@ public class LockService {
 			return this.key;
 		}
 		
-		public String getCurrentLockId() {
-			return this.currentLockId;
-		}
-		
-		public CountDownLatch getCurrentCountDownLatch() {
-			return this.currentCountDownLatch;
-		}
-		
 		public boolean isLocked() {
 			return this.reentrantLock.isLocked();
+		}
+		
+		public LockTracker getCurrentLockTracker() {
+			return this.currentLockTracker;
 		}
 		
 		public boolean lock(long timeout, TimeUnit unit) throws DLockException {
@@ -120,15 +120,12 @@ public class LockService {
 			}
 			
 			try {
-				if(isAcquired) {
-					this.currentLockId = null;
-					this.currentCountDownLatch = null;
-				} else {
+				if(!isAcquired) {
 					return false;
 				}
 				
-				final String lockId = Common.uuid();
-				this.currentLockId = lockId;
+				final LockTracker lockTracker = new LockTracker(Common.uuid());
+				this.currentLockTracker = lockTracker; 
 				
 				final List<ClusterNodePipeline> allowedPipelines = new LinkedList<>();
 				
@@ -144,27 +141,26 @@ public class LockService {
 				
 				if(!allowedPipelines.isEmpty()) {
 					timeout = endTime - System.currentTimeMillis();
-					final CountDownLatch countDownLatch = new CountDownLatch(allowedPipelines.size());
-					this.currentCountDownLatch = countDownLatch;
+					lockTracker.countDownLatch = new CountDownLatch(allowedPipelines.size());
 					
 					for(ClusterNodePipeline p : allowedPipelines) {
 						CommandSenderTask task = new CommandSenderTask(p,
 								new Object[] {Constants.LOCK_COMMAND_KEY,
 									Common.uuid(),
-									lockId,
+									lockTracker.lockId,
 									this.getKey(),
 									timeout},
-								new SenderCallbackImpl(lockId, countDownLatch));
+								new SenderCallbackImpl(lockTracker.lockId, lockTracker.countDownLatch));
 						
 						taskLooperService.addToNext(task);
 					}
 					
 					timeout = endTime - System.currentTimeMillis();
 					if(timeout > 0) {
-						countDownLatch.wait(timeout);
+						lockTracker.countDownLatch.wait(timeout);
 					}
 					
-					if(countDownLatch.getCount() != 0) {
+					if(lockTracker.countDownLatch.getCount() != 0) {
 						this.release();
 						return false;
 					}
@@ -199,7 +195,7 @@ public class LockService {
 			
 			@Override
 			public void preSending() {
-				if(!lockId.equals(currentLockId)) {
+				if(currentLockTracker != null && !lockId.equals(currentLockTracker.lockId)) {
 					throw new RuntimeException("current lock id changed");
 				}
 			}
@@ -213,6 +209,16 @@ public class LockService {
 			public void onSendingFailure(Throwable e) {
 				countDownLatch.countDown();
 			}
+		}
+	}
+	
+	public class LockTracker {
+		private final String lockId;
+		private CountDownLatch countDownLatch;
+		private Set<String> repliedNodes = new HashSet<>();
+		
+		public LockTracker(String lockId) {
+			this.lockId = lockId;
 		}
 	}
 }
