@@ -1,75 +1,107 @@
 package com.ni30.dlock.task;
 
-import com.ni30.dlock.Common;
 import com.ni30.dlock.Constants;
-import com.ni30.dlock.LockService;
+import com.ni30.dlock.SenderCallback;
+import com.ni30.dlock.TaskLooperService;
+import com.ni30.dlock.node.ClusterNode;
+import com.ni30.dlock.node.ClusterNodeManager;
 
 /**
  * @author nitish.aryan
  */
 public class CommandReceiverTask extends LoopTask {
-	private final LockService lockService;
-	private final String nodeName;
+	private final ClusterNodeManager clusterNodeManager;
+	private final TaskLooperService taskLooperService;
+	private ClusterNode senderNode;
 	private final String[] commandArgs;
-	private int stage = 0;
-	private int command;
-	private long receivedAt;
 	
-	public CommandReceiverTask(LockService lockService, String nodeName, String[] commandArgs) {
-		this.lockService = lockService;
-		this.nodeName = nodeName;
+	public CommandReceiverTask(ClusterNodeManager clusterNodeManager, TaskLooperService taskLooperService, ClusterNode senderNode, String[] commandArgs) {
+		this.clusterNodeManager = clusterNodeManager;
+		this.taskLooperService = taskLooperService;
+		this.senderNode = senderNode;
 		this.commandArgs = commandArgs;
-		this.receivedAt = System.currentTimeMillis();
 	}
 	
 	@Override
 	public void execute() throws Exception {
-		switch(this.stage) {
-			case 0:
-				this.stage = 1;
-				switch(this.commandArgs[0]) {
-					case Constants.LOCK_COMMAND_KEY:
-						if(this.commandArgs.length < 5) {
-							return;
-						}
-						this.command = 1;
-						break;
-					case Constants.LOCK_GRANTED_COMMAND_KEY:
-						if(this.commandArgs.length < 3) {
-							return;
-						}
-						this.command = 2;
-						break;
-					default:
-						return;
-				}
-				
-			case 1:
-				switch(this.command) {
-					case 1:
-						long timeout = Long.parseLong(commandArgs[4]);
-						if(System.currentTimeMillis() - this.receivedAt < timeout) {
-							boolean isGranted = this.lockService.grantRemoteLock(this.commandArgs[3], this.nodeName);
-							if(isGranted)  {
-								Object[] replyCommand = new Object[]{
-										Constants.LOCK_GRANTED_COMMAND_KEY,
-										Common.uuid(),
-										this.commandArgs[2],
-										this.commandArgs[3]
-									};
-								this.lockService.sendCommand(this.nodeName, replyCommand);
-							} else {
-								CurrentLoopTaskQueue.enqueue(this);
-							}
-						}
-						break;
-					case 2:
-						this.lockService.onLockGrant(this.commandArgs[3], this.commandArgs[2], this.nodeName);
-						break;
-					default:
-						return;
-				}
-				
+		final String commandName = this.commandArgs[0];
+		switch(commandName) {
+		case Constants.TRY_LOCK_COMMAND_KEY:
+			if(isReceivedByLeaderNode()) {
+				tryLockCommand();
+			}
+			break;
+		case Constants.UNLOCK_COMMAND_KEY:
+			if(isReceivedByLeaderNode()) {
+				unlockCommand();
+			}
+			break;
+		case Constants.LOCK_GRANTED_COMMAND_KEY:
+			lockGrantedCommand();
+			break;
+		case Constants.NEW_LEADER_COMMAND_KEY:
+			newLeaderCommand();
+		case Constants.ELECT_LEADER_COMMAND_KEY:
+			electLeaderCommand();
+			break;
 		}
+	}
+	
+	private void tryLockCommand() {
+		// TODO - will only be received by leader node
+		// command - [command-key, command-id, lock-key, requested-by-node-name]
+	}
+	
+	private void lockGrantedCommand() {
+		// TODO
+	}
+	
+	private void unlockCommand() {
+		// TODO - will only be received by leader node
+		// command - [command-key, command-id, lock-key, requested-by-node-name]
+	}
+	
+	private void newLeaderCommand() {
+		this.clusterNodeManager.onNewLeaderSelection(this.senderNode.getNodeName());
+	}
+	
+	private void electLeaderCommand() {
+		this.clusterNodeManager.electLeader();
+	}
+	
+	private void redirectToRightLeader(SenderCallback callback) {
+		CommandSenderTask task = new CommandSenderTask(clusterNodeManager.getLeaderNode(), this.commandArgs, callback);
+		taskLooperService.addToNext(task);
+	}
+	
+	private boolean isReceivedByLeaderNode() {
+		ClusterNode leaderNode = this.clusterNodeManager.getLeaderNode();
+		String nodeName = this.clusterNodeManager.getNodeName();
+		
+		if(nodeName.equals(leaderNode.getNodeName())) {
+			return true;
+		}
+		
+		SenderCallback callback = new SenderCallback() {
+			@Override
+			public void preSending() {
+				// do nothing
+			}
+
+			@Override
+			public void onSent() {
+				// do nothing
+			}
+
+			@Override
+			public void onSendingFailure(Throwable e) {
+				redirectToRightLeader(this);
+				e.printStackTrace();
+			}
+		};
+		
+		redirectToRightLeader(callback);
+		
+		return false;
 	}
 }

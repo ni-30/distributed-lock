@@ -15,6 +15,7 @@ public class ClusterNodePipeline extends PipelineIO<byte[]> {
 	
 	public ClusterNodePipeline(ClusterNode clusterNode) {
 		this.clusterNode = clusterNode;
+		this.clusterNode.setClusterNodePipeline(this);
 		this.outputBufferBucket = ByteBuffer.allocate(this.clusterNode.getOutputBufferBucketSize());
 	}
 	

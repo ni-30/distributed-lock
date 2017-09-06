@@ -2,6 +2,7 @@ package com.ni30.dlock;
 
 import com.ni30.dlock.node.ClusterNode;
 import com.ni30.dlock.node.ClusterNodeBufferPipeline;
+import com.ni30.dlock.node.ClusterNodeManager;
 import com.ni30.dlock.node.ClusterNodePipeline;
 import com.ni30.dlock.node.PipelineClosedException;
 import com.ni30.dlock.task.ClusterNodeHeartbeatTask;
@@ -22,20 +23,20 @@ import java.util.Properties;
 /**
  * @author nitish.aryan (iitd.nitish@gmail.com)
  */
-class DLockBootstrap {
+class DLockService {
 	private final String host;
 	private final int minPortNumber;
 	private final int maxPortNumber;
 	private final int serverSocketPort;
 	private final ServerSocketChannel serverSocketChannel;
-	public final LockService lockService;
 	private final TaskLooperService taskLooperService;
+	private final ClusterNodeManager clusterNodeManager;
     
-	public DLockBootstrap() throws Exception {
+	public DLockService() throws Exception {
 		this(new Properties());
 	}
 	
-	public DLockBootstrap(Properties properties) throws Exception {
+	public DLockService(Properties properties) throws Exception {
 		int threadPoolSize = Integer.parseInt(properties.getProperty("dlock.threadPoolSize", (Runtime.getRuntime().availableProcessors() * 2) + ""));
 		if(threadPoolSize < 2) {
 			threadPoolSize = 2;
@@ -65,24 +66,16 @@ class DLockBootstrap {
 		
 		this.serverSocketChannel.configureBlocking(false);
         this.serverSocketPort = p;
-        this.lockService = new LockService(this.host + ":" + this.serverSocketPort , this.taskLooperService);
+        
+        this.clusterNodeManager = new ClusterNodeManager(this.host + ":"+ this.serverSocketPort, this.taskLooperService);
         
         System.out.println("DLock listening on port: " + this.serverSocketPort);
-	}
-	
-	public LockService getLockService() {
-		return this.lockService;
 	}
 	
 	public void start() throws Exception {
 		this.taskLooperService.start();
 		this.taskLooperService.add(new SocketChannelAcceptTask());
 		this.taskLooperService.add(new ExistingScoketChannelConnectionTask());
-	}
-	
-	protected void loopIn(ClusterNode clusterNode) throws Exception {
-		LoopTask task = new AddPipeline(clusterNode);
-		this.taskLooperService.add(task);
 	}
 	
 	public void stop() throws Exception {
@@ -97,12 +90,20 @@ class DLockBootstrap {
 		this.taskLooperService.stop();
 	}
 	
+	public DLock getLock(String key) {
+		// TODO
+		return null;
+	}
+	
+	protected void loopIn(ClusterNode clusterNode) throws Exception {
+		LoopTask task = new AddPipeline(clusterNode);
+		this.taskLooperService.add(task);
+	}
+	
 	protected class ExistingScoketChannelConnectionTask extends LoopTask {
 		@Override
 		public void execute() throws Exception {
 			for(int p = minPortNumber; p <= maxPortNumber; p--) {
-				if(p == serverSocketPort) continue;
-				
 				SocketChannel clusterNodeSocketChannel = null;
 				try {
 					clusterNodeSocketChannel = SocketChannel.open();
@@ -112,7 +113,7 @@ class DLockBootstrap {
 						throw new RuntimeException("socket channel is not connected to host - " + host + " and port - " + p);
 					}
 					
-					final ClusterNode clusterNode = new ClusterNode(clusterNodeSocketChannel);
+					final ClusterNode clusterNode = clusterNodeManager.newNode(clusterNodeSocketChannel);
 					loopIn(clusterNode);
 				} catch(Exception e) {
 					e.printStackTrace();
@@ -143,7 +144,7 @@ class DLockBootstrap {
 						return;
 					}
 					
-					final ClusterNode clusterNode = new ClusterNode(clusterNodeSocketChannel);
+					final ClusterNode clusterNode = clusterNodeManager.newNode(clusterNodeSocketChannel);
 					loopIn(clusterNode);
 				}
 			} catch (Exception e) {
@@ -181,7 +182,7 @@ class DLockBootstrap {
 			inputBufferWriterTask.setWeightage(2);
 			OutputBufferWriterTask outputBufferWriterTask = new OutputBufferWriterTask(clusterNodeBufferPipeline);
 			outputBufferWriterTask.setWeightage(2);
-			NodeHandshakeAndDeployTask handshakeTask = new NodeHandshakeAndDeployTask(clusterNodePipeline, lockService, serverSocketPort);
+			NodeHandshakeAndDeployTask handshakeTask = new NodeHandshakeAndDeployTask(clusterNode, serverSocketPort);
 			handshakeTask.setWeightage(3);
 			
 			taskLooperService.add(clusterNodeHeartbeatTask, handshakeTask, inputBufferWriterTask, outputBufferWriterTask);
@@ -189,15 +190,13 @@ class DLockBootstrap {
 	}
 	
 	protected class NodeHandshakeAndDeployTask extends LoopTask {
-		private final ClusterNodePipeline clusterNodePipeline;
+		private final ClusterNode clusterNode;
 		private final int serverSocketPort;
 		private long startedAt = -1;
 		private boolean isSent = false;
-		private LockService lockContainer;
 		
-		public NodeHandshakeAndDeployTask(ClusterNodePipeline clusterNodePipeline, LockService lockContainer, int port) {
-			this.clusterNodePipeline = clusterNodePipeline;
-			this.lockContainer = lockContainer;
+		public NodeHandshakeAndDeployTask(ClusterNode clusterNode, int port) {
+			this.clusterNode = clusterNode;
 			this.serverSocketPort = port;
 			this.setWeightage(2);
 		}
@@ -212,15 +211,15 @@ class DLockBootstrap {
 			try {
 				if(!isSent) {
 					final byte[] handshakeBytes = Common.getByteCommand(Constants.HANDSHAKE_COMMAND_KEY, Common.uuid(), host, serverSocketPort);
-					this.clusterNodePipeline.input(handshakeBytes);
+					this.clusterNode.getClusterNodePipeline().input(handshakeBytes);
 					isSent = true;
 				}
 				
-				byte[] output = clusterNodePipeline.output();
+				byte[] output = clusterNode.getClusterNodePipeline().output();
 				if(output == null) {
 					if(System.currentTimeMillis() - startedAt > 5000) {
 						enqueueNextTime = false;
-						this.clusterNodePipeline.getClusterNode().kill();
+						this.clusterNode.getClusterNodePipeline().getClusterNode().kill();
 					}
 					return;
 				}
@@ -230,22 +229,20 @@ class DLockBootstrap {
 				
 				if(command.length != 4 || !Constants.HANDSHAKE_COMMAND_KEY.equals(command[0])) {
 					enqueueNextTime = false;
-					this.clusterNodePipeline.getClusterNode().kill();
+					this.clusterNode.kill();
 					throw new InvalidCommandException("invalid handshake command received - " + Common.convertToString(command));
 				}
 				
-				lockService.add(clusterNodePipeline);
-				
 				enqueueNextTime = false;
 				
-				this.clusterNodePipeline.getClusterNode().setNodeName(command[2] + ":" + command[3]);
+				this.clusterNode.setNodeName(command[2] + ":" + command[3]);
 				
 				final TaskLooper[] loopers = taskLooperService.getLoopers(taskLooperService.getSize());
 				
 				for(TaskLooper l : loopers) {
 					if(l == null) break;
 					
-					OutputCommandByteProcessorTask task = new OutputCommandByteProcessorTask(clusterNodePipeline, lockContainer);
+					OutputCommandByteProcessorTask task = new OutputCommandByteProcessorTask(clusterNodeManager, taskLooperService, clusterNode);
 					task.setWeightage(3);
 					l.addTask(task);
 				}

@@ -24,9 +24,13 @@ public class ClusterNode {
 	private final Pipe outputBufferPipe;
 	private long lastHeartbeatReceivedAt = -1;
 	
-	public ClusterNode(SocketChannel socketChannel) throws IOException {
+	private NodeCallback nodeCallback;
+	private ClusterNodePipeline clusterNodePipeline;
+	
+	public ClusterNode(SocketChannel socketChannel, NodeCallback nodeCallback) throws IOException {
 		this.id = UUID.randomUUID().toString();
 		
+		this.nodeCallback = nodeCallback;
 		this.socketChannel = socketChannel;
 		this.socketChannel.configureBlocking(false);
 		
@@ -93,26 +97,38 @@ public class ClusterNode {
 		return this.maxSocketOutputBufferSize;
 	}
 	
+	public void setClusterNodePipeline(ClusterNodePipeline clusterNodePipeline) {
+		this.clusterNodePipeline = clusterNodePipeline;
+	}
+	
+	public ClusterNodePipeline getClusterNodePipeline() {
+		return this.clusterNodePipeline;
+	}
+	
 	public void kill() throws IOException {
 		if(!isKilled()) {
-			synchronized(killLock){				
+			synchronized(killLock){		
 				if(isKilled()) {
 					return;
 				}
 				
-				this.isKilled = true;
-				
-				if(this.inputBufferPipe != null) {
-					if(this.inputBufferPipe.sink().isOpen()) this.inputBufferPipe.sink().close();
-					if(this.inputBufferPipe.source().isOpen()) this.inputBufferPipe.source().close();
+				try {
+					this.isKilled = true;
+					
+					if(this.inputBufferPipe != null) {
+						if(this.inputBufferPipe.sink().isOpen()) this.inputBufferPipe.sink().close();
+						if(this.inputBufferPipe.source().isOpen()) this.inputBufferPipe.source().close();
+					}
+					
+					if(this.outputBufferPipe != null) {
+						if(this.outputBufferPipe.source().isOpen()) this.outputBufferPipe.source().close();
+						if(this.outputBufferPipe.sink().isOpen()) this.outputBufferPipe.sink().close();
+					}
+					
+					if(this.socketChannel.isOpen()) this.socketChannel.close();
+				} finally {
+					this.nodeCallback.onKill();
 				}
-				
-				if(this.outputBufferPipe != null) {
-					if(this.outputBufferPipe.source().isOpen()) this.outputBufferPipe.source().close();
-					if(this.outputBufferPipe.sink().isOpen()) this.outputBufferPipe.sink().close();
-				}
-				
-				if(this.socketChannel.isOpen()) this.socketChannel.close();
 			}
 		}
 	}

@@ -2,18 +2,19 @@ package com.ni30.dlock.task;
 
 import com.ni30.dlock.Common;
 import com.ni30.dlock.SenderCallback;
+import com.ni30.dlock.node.ClusterNode;
 import com.ni30.dlock.node.ClusterNodePipeline;
 
 /**
  * @author nitish.aryan
  */
 public class CommandSenderTask extends LoopTask {
-	private final ClusterNodePipeline clusterNodePipeline;
+	private final ClusterNode clusterNode;
 	private final Object[] commandArgs;
 	private final SenderCallback callback;
 	
-	public CommandSenderTask(ClusterNodePipeline clusterNodePipeline, Object[] commandArgs, SenderCallback callback) {
-		this.clusterNodePipeline = clusterNodePipeline;
+	public CommandSenderTask(ClusterNode clusterNode, Object[] commandArgs, SenderCallback callback) {
+		this.clusterNode = clusterNode;
 		this.commandArgs = commandArgs;
 		this.callback = callback;
 	}
@@ -23,7 +24,7 @@ public class CommandSenderTask extends LoopTask {
 		if(this.callback != null) this.callback.preSending();
 		
 		try {
-			this.clusterNodePipeline.input(Common.getByteCommand(commandArgs));
+			this.clusterNode.getClusterNodePipeline().input(Common.getByteCommand(commandArgs));
 		} catch(Exception e) {
 			if(this.callback != null) this.callback.onSendingFailure(e);
 			return;

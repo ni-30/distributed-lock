@@ -8,6 +8,9 @@ public class Constants {
 	public static final String
 		HANDSHAKE_COMMAND_KEY = "handshake",
 		HEART_BEAT_COMMAND_KEY = "heartbeat",
-		LOCK_COMMAND_KEY = "lock",
-		LOCK_GRANTED_COMMAND_KEY = "lockGranted";;
+		ELECT_LEADER_COMMAND_KEY = "elect_leader",
+		NEW_LEADER_COMMAND_KEY = "new_leader",
+		TRY_LOCK_COMMAND_KEY = "try_lock",
+		LOCK_GRANTED_COMMAND_KEY = "lock_granted",
+		UNLOCK_COMMAND_KEY = "unlock";
 }
