@@ -3,7 +3,6 @@ package com.ni30.dlock.task;
 import com.ni30.dlock.Common;
 import com.ni30.dlock.SenderCallback;
 import com.ni30.dlock.node.ClusterNode;
-import com.ni30.dlock.node.ClusterNodePipeline;
 
 /**
  * @author nitish.aryan

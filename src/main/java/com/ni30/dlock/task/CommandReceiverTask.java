@@ -1,6 +1,7 @@
 package com.ni30.dlock.task;
 
 import com.ni30.dlock.Constants;
+import com.ni30.dlock.DLockCallback;
 import com.ni30.dlock.SenderCallback;
 import com.ni30.dlock.TaskLooperService;
 import com.ni30.dlock.node.ClusterNode;
@@ -26,39 +27,42 @@ public class CommandReceiverTask extends LoopTask {
 	public void execute() throws Exception {
 		final String commandName = this.commandArgs[0];
 		switch(commandName) {
-		case Constants.TRY_LOCK_COMMAND_KEY:
-			if(isReceivedByLeaderNode()) {
-				tryLockCommand();
-			}
-			break;
-		case Constants.UNLOCK_COMMAND_KEY:
-			if(isReceivedByLeaderNode()) {
-				unlockCommand();
-			}
-			break;
-		case Constants.LOCK_GRANTED_COMMAND_KEY:
-			lockGrantedCommand();
-			break;
-		case Constants.NEW_LEADER_COMMAND_KEY:
-			newLeaderCommand();
-		case Constants.ELECT_LEADER_COMMAND_KEY:
-			electLeaderCommand();
-			break;
+			case Constants.TRY_LOCK_COMMAND_KEY:
+				if(isReceivedByLeaderNode()) {
+					tryLockCommand();
+				}
+				break;
+			case Constants.UNLOCK_COMMAND_KEY:
+				if(isReceivedByLeaderNode()) {
+					unlockCommand();
+				}
+				break;
+			case Constants.LOCK_GRANTED_COMMAND_KEY:
+				lockGrantedCommand();
+				break;
+			case Constants.NEW_LEADER_COMMAND_KEY:
+				newLeaderCommand();
+			case Constants.ELECT_LEADER_COMMAND_KEY:
+				electLeaderCommand();
+				break;
 		}
 	}
 	
 	private void tryLockCommand() {
 		// TODO - will only be received by leader node
-		// command - [command-key, command-id, lock-key, requested-by-node-name]
-	}
-	
-	private void lockGrantedCommand() {
-		// TODO
+		// command - [command-key, command-id, requested-by-node-name, lock-key]
 	}
 	
 	private void unlockCommand() {
 		// TODO - will only be received by leader node
-		// command - [command-key, command-id, lock-key, requested-by-node-name]
+		// command - [command-key, command-id, requested-by-node-name, lock-key, lock-command-id]
+	}
+	
+	private void lockGrantedCommand() {
+		DLockCallback callback = this.clusterNodeManager.getDLockCallback(commandArgs[2]);
+		if(callback != null) {
+			callback.onLockGrant();
+		}
 	}
 	
 	private void newLeaderCommand() {

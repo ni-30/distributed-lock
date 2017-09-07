@@ -91,8 +91,7 @@ class DLockService {
 	}
 	
 	public DLock getLock(String key) {
-		// TODO
-		return null;
+		return new DLockImpl(clusterNodeManager, taskLooperService, key);
 	}
 	
 	protected void loopIn(ClusterNode clusterNode) throws Exception {

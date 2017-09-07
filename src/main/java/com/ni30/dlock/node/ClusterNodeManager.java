@@ -2,13 +2,16 @@ package com.ni30.dlock.node;
 
 import com.ni30.dlock.Common;
 import com.ni30.dlock.Constants;
+import com.ni30.dlock.DLockCallback;
 import com.ni30.dlock.TaskLooperService;
 import com.ni30.dlock.task.CommandSenderTask;
 import java.io.IOException;
 import java.nio.channels.SocketChannel;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -24,6 +27,8 @@ public class ClusterNodeManager {
 	private final String nodeName;
 	private final ReentrantReadWriteLock leaderNodeLock = new ReentrantReadWriteLock();
 	private final ReentrantReadWriteLock leaderMigrationLock = new ReentrantReadWriteLock();
+	private final Map<String, DLockCallback> dLockCallbacks = new HashMap<>();
+	private final Map<String, LockKeyInfo> lockedKeys = new ConcurrentHashMap<>();
 	
 	public ClusterNodeManager(String nodeName, TaskLooperService taskLooperService) {
 		this.nodeName = nodeName;
@@ -39,6 +44,46 @@ public class ClusterNodeManager {
 	
 	public String getNodeName() {
 		return this.nodeName;
+	}
+	
+	public DLockCallback getDLockCallback(String commandId) {
+		return this.dLockCallbacks.get(commandId);
+	}
+	
+	public void putDLockCallback(String commandId, DLockCallback callback) {
+		this.dLockCallbacks.put(commandId, callback);
+	}
+	
+	public void removeDLockCallback(String commandId) {
+		this.dLockCallbacks.remove(commandId);
+	}
+	
+	public void addLockedKey(String key, long leaseTime, String commandId) {
+		LockKeyInfo info = new LockKeyInfo();
+		info.startTime = System.currentTimeMillis();
+		info.commandId = commandId;
+		info.leaseTime = leaseTime;
+		info.isLocked = true;
+		
+		lockedKeys.put(key, info);
+	}
+	
+	public boolean isLockAcquiredByCurrentNode(String key) {
+		if(lockedKeys.containsKey(key)) {
+			LockKeyInfo v = lockedKeys.get(key);
+			if(v.isLocked && (System.currentTimeMillis() - v.startTime) < v.leaseTime) {
+				return true;
+			}
+		}
+		
+		return false;
+	}
+	
+	public void markUnlocked(String key, String commandId) {
+		LockKeyInfo v = lockedKeys.get(key);
+		if(v.commandId.equals(commandId)) {
+			v.isLocked = false;
+		}
 	}
 	
 	public ClusterNode getLeaderNode() {
@@ -156,5 +201,12 @@ public class ClusterNodeManager {
 				electLeader();
 			}
 		}
+	}
+	
+	private static class LockKeyInfo {
+		public String commandId;
+		public long leaseTime;
+		public long startTime;
+		public boolean isLocked;
 	}
 }
