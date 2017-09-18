@@ -12,5 +12,6 @@ public class Constants {
 		NEW_LEADER_COMMAND_KEY = "new_leader",
 		TRY_LOCK_COMMAND_KEY = "try_lock",
 		LOCK_GRANTED_COMMAND_KEY = "lock_granted",
-		UNLOCK_COMMAND_KEY = "unlock";
+		UNLOCK_COMMAND_KEY = "unlock",
+		CANCEL_LOCK_COMMAND_KEY = "cancel_lock";
 }

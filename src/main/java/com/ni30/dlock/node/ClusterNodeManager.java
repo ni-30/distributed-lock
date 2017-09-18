@@ -23,12 +23,14 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
 public class ClusterNodeManager {
 	private final TaskLooperService taskLooperService;
 	private final Set<ClusterNode> nodeSet = ConcurrentHashMap.newKeySet();
+	private final Map<String, ClusterNode> nodeMap = new ConcurrentHashMap<>();
 	private ClusterNode leaderNode;
 	private final String nodeName;
 	private final ReentrantReadWriteLock leaderNodeLock = new ReentrantReadWriteLock();
 	private final ReentrantReadWriteLock leaderMigrationLock = new ReentrantReadWriteLock();
 	private final Map<String, DLockCallback> dLockCallbacks = new HashMap<>();
 	private final Map<String, LockKeyInfo> lockedKeys = new ConcurrentHashMap<>();
+	private final Map<String, LockRequestBucket> lockRequestBuckets = new HashMap<>();
 	
 	public ClusterNodeManager(String nodeName, TaskLooperService taskLooperService) {
 		this.nodeName = nodeName;
@@ -97,6 +99,14 @@ public class ClusterNodeManager {
 			lock1.unlock();
 			lock2.unlock();
 		}
+	}
+	
+	public ClusterNode getNodeByName(String name) {
+		return this.nodeMap.get(name);
+	}
+	
+	public LockRequestBucket getLockRequestBucket(String key) {
+		return lockRequestBuckets.compute(key, (k,v) -> v == null ? new LockRequestBucket() : v);
 	}
 	
 	public void onNewLeaderSelection(String newLeaderName) {
@@ -192,11 +202,13 @@ public class ClusterNodeManager {
 		@Override
 		public void onInit() {
 			nodeSet.add(this.node);
+			nodeMap.put(this.node.getNodeName(), this.node);
 		}
 		
 		@Override
 		public void onKill() {
 			nodeSet.remove(node);
+			nodeMap.remove(this.node.getNodeName());
 			if(leaderNode == null || leaderNode == node) {
 				electLeader();
 			}

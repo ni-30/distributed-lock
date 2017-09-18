@@ -6,6 +6,7 @@ import com.ni30.dlock.SenderCallback;
 import com.ni30.dlock.TaskLooperService;
 import com.ni30.dlock.node.ClusterNode;
 import com.ni30.dlock.node.ClusterNodeManager;
+import com.ni30.dlock.node.LockRequestBucket;
 
 /**
  * @author nitish.aryan
@@ -32,6 +33,11 @@ public class CommandReceiverTask extends LoopTask {
 					tryLockCommand();
 				}
 				break;
+			case Constants.CANCEL_LOCK_COMMAND_KEY:
+				if(isReceivedByLeaderNode()) {
+					cancelLockCommand();
+				}
+				break;
 			case Constants.UNLOCK_COMMAND_KEY:
 				if(isReceivedByLeaderNode()) {
 					unlockCommand();
@@ -42,6 +48,7 @@ public class CommandReceiverTask extends LoopTask {
 				break;
 			case Constants.NEW_LEADER_COMMAND_KEY:
 				newLeaderCommand();
+				break;
 			case Constants.ELECT_LEADER_COMMAND_KEY:
 				electLeaderCommand();
 				break;
@@ -49,16 +56,40 @@ public class CommandReceiverTask extends LoopTask {
 	}
 	
 	private void tryLockCommand() {
-		// TODO - will only be received by leader node
-		// command - [command-key, command-id, requested-by-node-name, lock-key]
+		// command - [command-key, command-id, requested-by-node-name, lock-key, wait-time, lease-time]
+		LockRequestBucket bucket = this.clusterNodeManager.getLockRequestBucket(commandArgs[3]);
+		bucket.addNewRequest(commandArgs[2], commandArgs[1], Long.parseLong(commandArgs[4]), Long.parseLong(commandArgs[5]));
+		if(!bucket.isLooping()) {
+			synchronized(bucket) {
+				if(!bucket.isLooping()) {
+					bucket.loopIn();
+					LockRequestProcessorTask task = new LockRequestProcessorTask(clusterNodeManager, taskLooperService, bucket);
+					taskLooperService.addToNext(task);
+				}
+			}
+		}
+	}
+	
+	private void cancelLockCommand() {
+		// command - [command-key, command-id, requested-by-node-name, lock-key, lock-request-command-id]
+		LockRequestBucket bucket = this.clusterNodeManager.getLockRequestBucket(commandArgs[3]);
+		LockRequestBucket.LockRequest req = bucket.getLockRequest(commandArgs[2], commandArgs[4]);
+		if(req != null && req.isActive()) {
+			req.deactivate();
+		}
 	}
 	
 	private void unlockCommand() {
-		// TODO - will only be received by leader node
 		// command - [command-key, command-id, requested-by-node-name, lock-key, lock-command-id]
+		LockRequestBucket bucket = this.clusterNodeManager.getLockRequestBucket(commandArgs[3]);
+		LockRequestBucket.LockRequest currReq = bucket.getCurrentLockRequest();
+		if(currReq != null && currReq.getNodeName().equals(commandArgs[2]) && currReq.getCommandId().equals(commandArgs[4])) {
+			currReq.deactivate();
+		}
 	}
 	
 	private void lockGrantedCommand() {
+		// command - [command-key, command-id, lock-command-id]
 		DLockCallback callback = this.clusterNodeManager.getDLockCallback(commandArgs[2]);
 		if(callback != null) {
 			callback.onLockGrant();

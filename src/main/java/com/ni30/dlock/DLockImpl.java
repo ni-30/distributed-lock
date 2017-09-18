@@ -78,6 +78,18 @@ public class DLockImpl implements DLock {
 			return isLocked;
 		} finally {
 			clusterNodeManager.removeDLockCallback(commandId);
+			if(!isLocked) {
+				Object[] command2 = new Object[]{
+						Constants.CANCEL_LOCK_COMMAND_KEY,
+						Common.uuid(),
+						clusterNodeManager.getNodeName(),
+						key,
+						commandId
+					};
+				
+				CommandSenderTask task2 = new CommandSenderTask(clusterNodeManager.getLeaderNode(), command2, null);
+				taskLooperService.addToNext(task2);
+			}
 		}
 	}
 
@@ -88,6 +100,8 @@ public class DLockImpl implements DLock {
 
 	@Override
 	public void unlock() {
+		if(!isLocked) return;
+		
 		Object[] command = new Object[]{
 				Constants.UNLOCK_COMMAND_KEY,
 				Common.uuid(),
@@ -100,6 +114,7 @@ public class DLockImpl implements DLock {
 			taskLooperService.addToNext(task);
 		} finally {
 			clusterNodeManager.markUnlocked(key, commandId);
+			isLocked = false;
 		}
 	}
 
@@ -117,7 +132,16 @@ public class DLockImpl implements DLock {
 		@Override
 		public void onLockGrant() {
 			if((System.currentTimeMillis() - startTime) >= waitTime || countDownLatch.getCount() == 0) {
-				unlock();
+				Object[] command = new Object[]{
+						Constants.UNLOCK_COMMAND_KEY,
+						Common.uuid(),
+						clusterNodeManager.getNodeName(),
+						key,
+						commandId
+					};
+				
+				CommandSenderTask task = new CommandSenderTask(clusterNodeManager.getLeaderNode(), command, null);
+				taskLooperService.addToNext(task);
 			} else {
 				clusterNodeManager.addLockedKey(key, leaseTime, commandId);
 				countDownLatch.countDown();
