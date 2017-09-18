@@ -8,7 +8,7 @@ distributed lock project in java
     dlock.threadPoolSize (default 2 times number of cpu)
 
 
-## Create client instance: ##
+## Create service instance: ##
 
     Properties props = new Properties();
     props.setProperty("dlock.host", "127.0.0.1");
@@ -16,17 +16,20 @@ distributed lock project in java
     props.setProperty("dlock.port.max", "5000");
     props.setProperty("dlock.threadPoolSize", "2");
 
-    DLockClient client = new DLockClient(props);
+    DLockService service = new DLockService(props);
+    service.start();
 
 
 ## Acquire lock: ##
-    String lockKey = "key";
-    long lockTimeout = 1500;
-    TimeUnit lockTimeoutUnit = TimeUnit.MILLISECONDS;
+    String lockKey = "dummy";
+    long waitTime = 1500;
+    long leaseTime = 3000;
+    TimeUnit timeUnit = TimeUnit.MILLISECONDS;
 
-    DLock lock = client.acquireLock(lockKey, lockTimeout, lockTimeoutUnit);
+    DLock lock = service.getLock(lockKey);
     try {
+      lock.tryLock(waitTime, leaseTime, timeUnit);
       // do something
     } finally {
-      lock.release();
+      lock.unlock();
     }
