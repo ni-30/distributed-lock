@@ -65,6 +65,7 @@ public class LockRequestProcessorTask extends LoopTask {
 				}
 			};
 			
+			req.setLeaseTimestamp(System.currentTimeMillis());
 			CommandSenderTask task = new CommandSenderTask(clusterNodeManager.getNodeByName(req.getNodeName()), command, senderCallback);
 			taskLooperService.addToNext(task);
 			
